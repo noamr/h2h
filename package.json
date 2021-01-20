@@ -1,0 +1,22 @@
+{
+  "name": "h2h",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/noamr/h2h",
+  "author": "Noam Rosenthal <noam.j.rosenthal@gmail.com>",
+  "license": "BSD",
+  "scripts": {
+    "build-standalone": "esbuild src/standalone/index.ts --sourcemap --bundle --platform=browser --target=chrome80,firefox60 --outfile=dist/index.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.8.33",
+    "ts-node": "^9.1.1",
+    "typescript": "^4.1.3"
+  },
+  "dependencies": {
+    "@babel/standalone": "^7.12.12",
+    "@types/babel__core": "^7.1.12",
+    "@types/babel__standalone": "^7.1.3",
+    "zero-md": "^2.0.1"
+  }
+}
