@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script src="../../dist/index.js"></script>
+        <bundle-script src="hello-world.ts" id="bundle"></bundle-script>
+        <script>
+            document.getElementById('bundle').addEventListener('load', event => {
+                alert(event.module.hello())
+            })
+        </script>
+    </head>
+    <body>
+    </body>
+</html>
