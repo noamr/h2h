@@ -5,14 +5,17 @@
         <bundle-script src="hello-world.ts" id="bundle"></bundle-script>
         <script>
             document.getElementById('bundle').addEventListener('load', event => {
-                alert(event.module.hello())
+                document.querySelector('#bundle-output').innerText = event.module.hello()
             })
         </script>
     </head>
     <body>
         <zero-md>
-            # Header
-            Hello World
+            <script type="text/markdown">
+## Header
+Hello from *MarkDown*
+            </script>
         </zero-md>
+        <output id="bundle-output"></output>
     </body>
 </html>
