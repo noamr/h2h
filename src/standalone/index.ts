@@ -1,4 +1,4 @@
-import {ZeroMd} from 'zero-md'
+import 'zero-md'
 import {BundleScript} from './bundler'
 
 // Import the element definition
