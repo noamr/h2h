@@ -1,7 +1,3 @@
-import 'zero-md'
-import {BundleScript} from './bundler'
-
-// Import the element definition
-
-// Register the custom element
-customElements.define('bundle-script', BundleScript)
+import {ZeroMd} from 'zero-md'
+import 'html-include-element'
+import './bundler'

@@ -1,0 +1,7 @@
+{
+    "lodash": {
+        "global": "_",
+        "version": "4.17.20",
+        "url": "https://unpkg.com/lodash@4.17.20/lodash.min.js"
+    }
+}

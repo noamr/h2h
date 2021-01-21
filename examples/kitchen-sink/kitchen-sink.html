@@ -2,20 +2,48 @@
 <html>
     <head>
         <script src="../../dist/index.js"></script>
-        <bundle-script src="hello-world.ts" id="bundle"></bundle-script>
+        <link rel="importmap" href="imports.json" />
+        <link rel="library"
+              source=
+              name="lodash"
+              global="_"
+              href="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.20/lodash.min.js" />
+        <bundle-script src="hello-world.ts" id="bundle">
+        </bundle-script>
         <script>
             document.getElementById('bundle').addEventListener('load', event => {
                 document.querySelector('#bundle-output').innerText = event.module.hello()
             })
         </script>
+        <bundle-script src="hello-lodash.ts" id="ld">           
+        </bundle-script>
+        <script>
+            document.getElementById('ld').addEventListener('load', event => {
+                document.querySelector('#ld-output').innerText = event.module.helloLodash()
+            })
+        </script>
+        <bundle-script src="hello-server.ts" side="server">
+        </bundle-script>
+        <bundle-script src="hello-iso.ts" side="client server" defer>
+        </bundle-script>
     </head>
     <body>
+        <h2>Bundle</h2>
+        <output id="bundle-output"></output>
+        <h2>Zero MD</h2>
         <zero-md>
             <script type="text/markdown">
-## Header
+### Header 3
 Hello from *MarkDown*
             </script>
         </zero-md>
-        <output id="bundle-output"></output>
+        <h2>HTML Include</h2>
+        <html-include src="include.html"></html-include>
+        <h2>Importable</h2>
+        <output id="ld-output"></output>
+        <h2>Server</h2>
+        <output id="server-output"></output>
+        <h2>Isomporphic</h2>
+        <output id="iso-output"></output>
     </body>
 </html>
