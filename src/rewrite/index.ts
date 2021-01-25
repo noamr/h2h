@@ -1,5 +1,3 @@
-import {JSDOM} from 'jsdom'
-import { parse, HTMLElement } from 'node-html-parser'
 import {ImportMap} from '../common/types'
 import fs from 'fs-extra'
 import {rmdirSync} from 'fs'
@@ -8,6 +6,8 @@ import {exec} from 'child_process'
 import {relate} from 'relateurl'
 import path from 'path'
 import express from 'express'
+import vm from 'vm'
+import {JSDOM} from 'jsdom'
 
 interface RewriteOptions {
     browser: string
@@ -21,18 +21,22 @@ interface BuiltSite {
 
 const rewritten = new Map<string, string>()
 
-async function rewriteBundles(documentElement: HTMLElement, options: RewriteOptions) {
-    console.log(options.basePath, path.join(options.basePath, 'i.json'))
+async function removeDevScript(document: HTMLDocument) {
+    for (const script of Array.from(document.querySelectorAll('script[side="dev"]')))
+        script.remove()
+}
+
+async function rewriteBundles(document: Document, options: RewriteOptions) {
     const urlToPath = (url: string) => path.join(options.basePath, '..', url)
-    const importMapLinks = Array.from(documentElement.querySelectorAll('head link[rel="importmap"][href]'))
-    const importLinks = Array.from(documentElement.querySelectorAll('head link[rel="package"]'))
+    const importMapLinks = Array.from(document.querySelectorAll('head link[rel="importmap"][href]'))
+    const importLinks = Array.from(document.querySelectorAll('head link[rel="package"]'))
     const importMaps = [...await Promise.all(importMapLinks.map(async link => await (await fetch(link.getAttribute('href') as string)).json() as ImportMap)),
         ...importLinks.map(
             l => ({[l.getAttribute('name') || '']: {global: l.getAttribute('global'), version: l.getAttribute('version'), url: l.getAttribute('href')}} as ImportMap))
     ]
 
     const importMap = importMaps.reduce((a, o) => Object.assign(a, o), {})
-    const bundleScriptTags = Array.from(documentElement.querySelectorAll('bundle-script'))
+    const bundleScriptTags = Array.from(document.querySelectorAll('bundle-script'))
     const deps = new Set<string>()
     for (const name in importMap)
         deps.add(`${name}@${importMap[name].version}`)
@@ -41,38 +45,61 @@ async function rewriteBundles(documentElement: HTMLElement, options: RewriteOpti
     const inlines: Map<string, string> = new Map<string, string>()
     const bundles = new Set<string>()
 
-    for (const script of bundleScriptTags) {
+    for (const script of bundleScriptTags as HTMLScriptElement[]) {
         let src = script.getAttribute('src')
         if (!src) {
-            if (!script.innerText)
+            if (!script.innerHTML)
                 continue
             src = `./${Number(new Date().valueOf()).toString(36)}.js`
-            inlines.set(src, script.innerText)
+            inlines.set(src, script.innerHTML)
         }
         bundles.add(src)
-        script.insertAdjacentHTML('afterend', `
-            <!-- ${script.outerHTML} -->
-            <script src="${src}.bundle.js" async ${script.hasAttribute('defer') ? 'defer' : ''}>
-            </script>
-        `)
-        script.remove()
+        const newScript = document.createElement('script') as HTMLScriptElement
+        newScript.src = `${src}.bundle.js`
+        newScript.setAttribute('side', script.getAttribute('side') || 'client')
+        if (script.hasAttribute('defer'))
+            newScript.setAttribute('defer', 'defer');
+        (script.parentElement as HTMLElement).replaceChild(newScript, script)
     }
-
-    for (const script of documentElement.querySelectorAll('script[side="dev"]'))
-        script.remove()
 
     return {bundles, deps: Array.from(deps), inlines}
 }
 
 async function rewriteHTML(html: string, options: RewriteOptions) {
-    const dom = parse(html) as HTMLElement
-    const {bundles, deps, inlines} = await rewriteBundles(dom, options)
+    const {window} = new JSDOM(html)
+    await removeDevScript(window.document)
+    const {bundles, deps, inlines} = await rewriteBundles(window.document, options)
 
     return {
-        html: dom.outerHTML,
+        html: window.document.documentElement.outerHTML,
         bundles,
         deps,
         inlines
+    }
+}
+
+async function executeServerScripts({window}: JSDOM, options: RewriteOptions) {
+    const serverScripts = Array.from(window.document.querySelectorAll('script[side~="server"]'))
+    const urlToPath = (url: string) => path.join(options.basePath, url)
+    for (const serverScript of serverScripts) {
+        const scriptPath = urlToPath(serverScript.getAttribute('src') as string)
+        if (serverScript.getAttribute('side') === 'server')
+            serverScript.remove()
+
+        const code = await fs.readFile(scriptPath, 'utf8')
+//        eval(code)
+        vm.runInNewContext(code, window)
+    }
+
+    return window.document.documentElement.outerHTML
+}
+
+async function executeHTML(html: string, options: RewriteOptions) {
+    // TODO: this can be cached from rewriteHTML
+    const jsdom = new JSDOM(html)
+    
+    return {
+        html: await executeServerScripts(jsdom, options)
     }
 }
 
@@ -97,7 +124,6 @@ async function buildIfNeeded(options: BuildOptions) {
     if (built)
         return built
     buildPending = new Promise<string>(async r => {
-        console.log(buildKey)
         const dir = await fs.mkdtemp(tmpdir())
         const distDir = path.join(dir, '.dist')
         await fs.mkdir(distDir)
@@ -131,11 +157,10 @@ async function buildIfNeeded(options: BuildOptions) {
             `).join('')}
         `
 
-        console.log(buildScript)
         await fs.writeFile(path.join(dir, 'build.sh'), buildScript)
         await new Promise(resolve => exec('./build.sh', {cwd: dir}, () => resolve({})))
-        builtPackages.set(buildKey, dir)
-        r(dir)
+        builtPackages.set(buildKey, distDir)
+        r(distDir)
     })
 
     return await buildPending
@@ -148,9 +173,18 @@ export function serve(assetDir: string) {
         const chromeVersion = / Chrome\/(\d+)/.exec(userAgent)
         const firefoxVersion = / Firefox\/(\d+)/.exec(userAgent)
         const browser = safariVersion ? `safari${safariVersion[1]}` : chromeVersion ? `chrome${chromeVersion[1]}` : firefoxVersion ? `firefox${firefoxVersion[1]}` : 'chrome80'
-        console.log(req.header('user-agent'))
         const dir = await buildIfNeeded({rootDir: path.normalize(assetDir), browser})
-        express.static(path.join(dir, '.dist'))(req, res, next)
+        if ((req.headers['accept'] || '').includes('text/html')) {
+            console.log({dir}, req.path, req.headers)
+            const html = await fs.readFile(path.join(dir, req.path || 'index.html'), 'utf8')
+            if (html) {
+                const rewritten = await executeHTML(html, {basePath: dir, browser})
+                res.setHeader('Content-type', 'text/html')
+                res.send(rewritten.html)
+                return
+            }
+        }
+        express.static(dir)(req, res, next)
     }
 }
 

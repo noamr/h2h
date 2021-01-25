@@ -1,4 +1,5 @@
 import {helloLodash} from "./hello-lodash.ts"
 import {hello} from "./hello-world.ts"
 
-document.querySelector('#server-output').innerText = `${hello()} ${helloLodash()}`
+console.log('!!!')
+window.document.querySelector('#server-output').innerHTML = `${hello()} ${helloLodash()}`
