@@ -1,11 +1,10 @@
 import express from 'express'
-import serve from './serve'
+import serve from '../../src/rewrite/serve'
 
 const port = process.env.PORT || 3000
 
 const app = express()
-const rootDir = process.argv[process.argv.length - 1]
-app.use(serve(rootDir))
+app.use(serve(__dirname))
 app.listen(port, () => {
     console.log(`Listening on port ${port}`)
 })
