@@ -1,5 +1,5 @@
 import express from 'express'
-import serve from '../../src/rewrite/serve'
+import serve from '../../src/server/serve'
 
 const port = process.env.PORT || 3000
 

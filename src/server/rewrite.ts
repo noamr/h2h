@@ -7,6 +7,7 @@ import {relate} from 'relateurl'
 import path from 'path'
 import express from 'express'
 import {JSDOM} from 'jsdom'
+import * as uuid from 'uuid'
 
 interface BuildOptions {
     browser: string
@@ -17,7 +18,7 @@ const builtPackages = new Map<string, string>()
 let buildPending: Promise<string> | null = null
 
 async function rewriteBundles(document: Document, options: BuildOptions) {
-    const urlToPath = (url: string) => path.join(options.basePath, '..', url)
+    const urlToPath = (url: string) => path.join(options.rootDir, '..', url)
     const importMapLinks = Array.from(document.querySelectorAll('head link[rel="importmap"][href]'))
     const importLinks = Array.from(document.querySelectorAll('head link[rel="package"]'))
     const importMaps = [...await Promise.all(importMapLinks.map(async link => await (await fetch(link.getAttribute('href') as string)).json() as ImportMap)),
@@ -40,7 +41,7 @@ async function rewriteBundles(document: Document, options: BuildOptions) {
         if (!src) {
             if (!script.innerHTML)
                 continue
-            src = `./${Number(new Date().valueOf()).toString(36)}.js`
+            src = `./${uuid.v4()}.js`
             inlines.set(src, script.innerHTML)
         }
         bundles.add(src)
@@ -97,7 +98,7 @@ export async function buildIfNeeded(options: BuildOptions) {
         const depPaths = new Set()
         for (const htmlPath of htmlFiles) {
             const basePath = path.join(distDir, htmlPath)
-            const {html, bundles, deps, inlines} = await rewriteHTML(await fs.readFile(basePath, 'utf8'), {browser: options.browser, basePath})
+            const {html, bundles, deps, inlines} = await rewriteHTML(await fs.readFile(basePath, 'utf8'), {browser: options.browser, rootDir: distDir})
             await Promise.all(Array.from(inlines.entries()).map(([name, code]) => {
                 return fs.writeFile(path.join(distDir, name), code)
             }))
