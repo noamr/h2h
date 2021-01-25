@@ -2,7 +2,7 @@
 <html>
     <head>
         <script src="../../dist/index.js"></script>
-        <link rel="importmap" href="imports.json" />
+        <link rel="package" name="lodash" href="https://unpkg.com/lodash@4.17.20/lodash.min.js" global="_" version="4.17.20" />
         <bundle-script defer>
             import {hello} from './hello-world.ts'
             document.querySelector('#bundle-output').innerText = hello()

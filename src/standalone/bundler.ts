@@ -78,34 +78,40 @@ class BundleLoadEvent extends Event {
 let globalImportsInitializer: Promise<void> | null = null
 
 const initGlobalImports = () => new Promise(resolve => {
-    globalImportsInitializer = globalImportsInitializer || new Promise(r => {
-        const links = Array.from(document.querySelectorAll('head link[rel="importmap"][href]')) as HTMLLinkElement[]
-        Promise.all(links.map(async link => {
-            const importMap = await (await fetch(link.href)).json() as ImportMap
-            await Promise.all(Object.entries(importMap).map(async entry => {
-                const libName = entry[0]
-                const {global, version, url} = entry[1]
-                const script = document.createElement('script')
-                script.src = url
-                console.info(`Loading library ${libName}`)
-                const moduleURL = await new Promise(res => {
-                    script.addEventListener('load', () => {
-                        const lib = window[global]
-                        const asModule = Object.keys(lib).map(key => `
-                            export const ${key} = window["${global}"]["${key}"];
-                        `).join('\n') + `
-                        export default ${global};`
-                        const blob = new Blob([asModule], {type: 'text/javascript'})
-                        const blobURL = URL.createObjectURL(blob)
-                        console.info(`Loaded library ${libName}`)
-                        res(blobURL)
-                    })
-                    document.head.appendChild(script)
+    globalImportsInitializer = globalImportsInitializer || (async () => {
+        const importMapLinks = Array.from(document.querySelectorAll('head link[rel="importmap"][href]')) as HTMLLinkElement[]
+        const importLinks = Array.from(document.querySelectorAll('head link[rel="package"]')) as HTMLLinkElement[]
+        const importMaps = [...await Promise.all(importMapLinks.map(async link => await (await fetch(link.href)).json() as ImportMap)),
+            ...importLinks.map(
+                l => ({[l.getAttribute('name') || '']: {global: l.getAttribute('global'), version: l.getAttribute('version'), url: l.getAttribute('href')}} as ImportMap))
+        ]
+
+        const importMap = importMaps.reduce((a, o) => Object.assign(a, o), {})
+        console.log(importMap)
+        await Promise.all(Object.entries(importMap).map(async entry => {
+            const libName = entry[0]
+            const {global, version, url} = entry[1]
+            const script = document.createElement('script')
+            script.src = url
+            console.info(`Loading library ${libName}`)
+            const moduleURL = await new Promise(res => {
+                script.addEventListener('load', () => {
+                    const lib = window[global]
+                    const asModule = Object.keys(lib).map(key => `
+                        export const ${key} = window["${global}"]["${key}"];
+                    `).join('\n') + `
+                    export default ${global};`
+                    const blob = new Blob([asModule], {type: 'text/javascript'})
+                    const blobURL = URL.createObjectURL(blob)
+                    console.info(`Loaded library ${libName}`)
+                    res(blobURL)
                 })
-                registry.set(libName, moduleURL)
-            }))
-        })).then(() => r(void 0))
-    })
+                document.head.appendChild(script)
+            })
+            registry.set(libName, moduleURL)
+        }))
+
+    })()
 
     globalImportsInitializer.then(() => resolve({}))
 })
