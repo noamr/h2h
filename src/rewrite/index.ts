@@ -8,7 +8,7 @@ import path from 'path'
 import express from 'express'
 import vm from 'vm'
 import {JSDOM} from 'jsdom'
-
+import MarkdownIt from 'markdown-it'
 interface RewriteOptions {
     browser: string
     basePath: string
@@ -78,6 +78,20 @@ async function rewriteHTML(html: string, options: RewriteOptions) {
     }
 }
 
+async function executeMarkdown({window}: JSDOM) {
+    const markdowns = window.document.querySelectorAll('zero-md')
+    const markd = new MarkdownIt()
+    let needsClientSide = false
+    markdowns.forEach(md => {
+        const script = md.querySelector("script[type='text/markdown']")
+        if (!script)
+            return
+
+        const html = markd.render(script.innerHTML)
+        md.outerHTML = html
+    })
+}
+
 async function executeServerScripts({window}: JSDOM, options: RewriteOptions) {
     const serverScripts = Array.from(window.document.querySelectorAll('script[side]'))
     const urlToPath = (url: string) => path.join(options.basePath, url)
@@ -91,19 +105,18 @@ async function executeServerScripts({window}: JSDOM, options: RewriteOptions) {
             serverScript.remove()
 
         const code = await fs.readFile(scriptPath, 'utf8')
-//        eval(code)
         vm.runInNewContext(code, window)
     }
-
-    return window.document.documentElement.outerHTML
 }
 
 async function executeHTML(html: string, options: RewriteOptions) {
     // TODO: this can be cached from rewriteHTML
     const jsdom = new JSDOM(html)
-    
+    await executeMarkdown(jsdom)
+    await executeServerScripts(jsdom, options)
+    html = jsdom.window.document.documentElement.outerHTML
     return {
-        html: await executeServerScripts(jsdom, options)
+        html
     }
 }
 
