@@ -1,4 +1,5 @@
 import {transform, availablePresets} from '@babel/standalone'
+import {ImportMap} from '../common/types'
 
 const registry = new Map<string, string>()
 let globalImportsInitialized = false
@@ -41,6 +42,17 @@ async function resolveModule(code: string, url: URL) {
     return transformImports()
 }
 
+async function resolveCode(code: string, url: URL) {
+    const result = await resolveModule(code, url)
+    if (!result || !result.code)
+        throw new Error(`Unable to import ${name}`)
+
+    const blob = new Blob([result.code], {type: 'text/javascript'})
+    const blobURL = URL.createObjectURL(blob)
+    registry.set(url.href, blobURL)
+    return blobURL
+}
+
 export async function resolve(name: string, baseURL: string): Promise<string> {
     console.info(`Searching for module ${name}`)
     if (registry.has(name))
@@ -52,14 +64,7 @@ export async function resolve(name: string, baseURL: string): Promise<string> {
     if (response.status !== 200)
         throw new Error(`Module not found: ${name}`)
     const text = await response.text()
-    const result = await resolveModule(text, url)
-    if (!result || !result.code)
-        throw new Error(`Unable to import ${name}`)
-
-    const blob = new Blob([result.code], {type: 'text/javascript'})
-    const blobURL = URL.createObjectURL(blob)
-    registry.set(url.href, blobURL)
-    return blobURL
+    return resolveCode(text, url)
 }
 
 class BundleLoadEvent extends Event {
@@ -71,11 +76,7 @@ class BundleLoadEvent extends Event {
 }
 
 let globalImportsInitializer: Promise<void> | null = null
-type ImportMap = {[libName: string]: {
-    global: string,
-    version: string,
-    url: string
-}}
+
 const initGlobalImports = () => new Promise(resolve => {
     globalImportsInitializer = globalImportsInitializer || new Promise(r => {
         const links = Array.from(document.querySelectorAll('head link[rel="importmap"][href]')) as HTMLLinkElement[]
@@ -110,27 +111,58 @@ const initGlobalImports = () => new Promise(resolve => {
 })
 class BundleScript extends HTMLElement {
     shadow: HTMLShadowElement
+    slotElement: HTMLSlotElement
+    loaded: boolean
+
     constructor() {
         super()
+        this.slotElement = document.createElement('slot')
+        const style = document.createElement('style')
         this.shadow = this.attachShadow({mode: 'closed'})
+        style.innerHTML = `:host { display: none }`
+        this.shadow.appendChild(style)
+        this.shadow.appendChild(this.slotElement)
+        this.loaded = false
+        this.slotElement.addEventListener('slotchange', () => {
+            this.render()
+        })
     }
 
-    async connectedCallback() {
-        const src = this.getAttribute('src')
-        if (!src)
+    get observedAttributes() { return ['src'] }
+    attributesChangedCallback() {
+        this.render()
+    }
+
+    connectedCallback() {
+        this.render()
+    }
+
+    async render() {
+        if (this.loaded)
             return
+
+        const src = this.getAttribute('src')
+        const inner = this.innerText
+        if (!src && !inner)
+            return
+
+        this.loaded = true
 
         await initGlobalImports()
         const defer = this.getAttribute('defer') === 'defer'
         
         const dispatch = async () => {
-            const blobURL = await resolve(src, location.href)
+            const blobURL = inner ?
+                await resolveCode(inner, new URL(location.href)) :
+                await resolve(src as string, location.href)
+
             const uid = createUID()
+            const script = document.createElement('script')
             window[uid] = (module: any) => {
                 this.dispatchEvent(new BundleLoadEvent(module))
                 delete window[uid]
+                script.remove()
             }
-            const script = document.createElement('script')
             script.type = 'module'
             const textNode = document.createTextNode(`
                 import('${blobURL}').then(window['${uid}'])

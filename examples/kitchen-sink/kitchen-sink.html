@@ -3,24 +3,15 @@
     <head>
         <script src="../../dist/index.js"></script>
         <link rel="importmap" href="imports.json" />
-        <link rel="library"
-              source=
-              name="lodash"
-              global="_"
-              href="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.20/lodash.min.js" />
-        <bundle-script src="hello-world.ts" id="bundle">
+        <bundle-script defer>
+            import {hello} from './hello-world.ts'
+            document.querySelector('#bundle-output').innerText = hello()
+        </bundle-script>
+        <bundle-script defer>
+            import {helloLodash} from './hello-lodash.ts'
+            document.querySelector('#ld-output').innerText = helloLodash()
         </bundle-script>
         <script>
-            document.getElementById('bundle').addEventListener('load', event => {
-                document.querySelector('#bundle-output').innerText = event.module.hello()
-            })
-        </script>
-        <bundle-script src="hello-lodash.ts" id="ld">           
-        </bundle-script>
-        <script>
-            document.getElementById('ld').addEventListener('load', event => {
-                document.querySelector('#ld-output').innerText = event.module.helloLodash()
-            })
         </script>
         <bundle-script src="hello-server.ts" side="server">
         </bundle-script>
