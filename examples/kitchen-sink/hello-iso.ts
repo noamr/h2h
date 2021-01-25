@@ -1,8 +1,8 @@
 import {helloLodash} from "./hello-lodash.ts"
 import {hello} from "./hello-world.ts"
 
-const output = window.document.querySelector('#iso-output')
-output.innerHTML = `
-    ${output.innerHTML}
+const output = document.querySelector('#iso-output') as HTMLElement
+output.innerText = `
+    ${output.innerText}
     ${hello()} ${helloLodash()}
 `
