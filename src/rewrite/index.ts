@@ -24,39 +24,55 @@ const rewritten = new Map<string, string>()
 async function rewriteBundles(documentElement: HTMLElement, options: RewriteOptions) {
     console.log(options.basePath, path.join(options.basePath, 'i.json'))
     const urlToPath = (url: string) => path.join(options.basePath, '..', url)
-    const importMaps = Array.from(documentElement.querySelectorAll('link[rel="importmap"][href]'))
-    const bundleScriptTags = Array.from(documentElement.querySelectorAll('bundle-script'))
-    const bundles = bundleScriptTags.map(b => b.getAttribute('src')) as string[]
-    const deps = new Set<string>()
-    for (const l of importMaps) {
-        const importMap = JSON.parse(fs.readFileSync(urlToPath(l.getAttribute('href') as string), 'utf8')) as ImportMap
-        for (const name in importMap)
-            deps.add(`${name}@${importMap[name].version}`)
+    const importMapLinks = Array.from(documentElement.querySelectorAll('head link[rel="importmap"][href]'))
+    const importLinks = Array.from(documentElement.querySelectorAll('head link[rel="package"]'))
+    const importMaps = [...await Promise.all(importMapLinks.map(async link => await (await fetch(link.getAttribute('href') as string)).json() as ImportMap)),
+        ...importLinks.map(
+            l => ({[l.getAttribute('name') || '']: {global: l.getAttribute('global'), version: l.getAttribute('version'), url: l.getAttribute('href')}} as ImportMap))
+    ]
 
-        l.remove()
-    }
+    const importMap = importMaps.reduce((a, o) => Object.assign(a, o), {})
+    const bundleScriptTags = Array.from(documentElement.querySelectorAll('bundle-script'))
+    const deps = new Set<string>()
+    for (const name in importMap)
+        deps.add(`${name}@${importMap[name].version}`)
+
+    importLinks.forEach(l => l.remove())
+    const inlines: Map<string, string> = new Map<string, string>()
+    const bundles = new Set<string>()
 
     for (const script of bundleScriptTags) {
-        const src = script.getAttribute('src') || ''
+        let src = script.getAttribute('src')
+        if (!src) {
+            if (!script.innerText)
+                continue
+            src = `./${Number(new Date().valueOf()).toString(36)}.js`
+            inlines.set(src, script.innerText)
+        }
+        bundles.add(src)
         script.insertAdjacentHTML('afterend', `
             <!-- ${script.outerHTML} -->
-            <script src="${script.getAttribute('src')}.bundle.js" async ${script.hasAttribute('defer') ? 'defer' : ''}>
+            <script src="${src}.bundle.js" async ${script.hasAttribute('defer') ? 'defer' : ''}>
             </script>
         `)
         script.remove()
     }
 
-    return {bundles, deps: Array.from(deps)}
+    for (const script of documentElement.querySelectorAll('script[side="dev"]'))
+        script.remove()
+
+    return {bundles, deps: Array.from(deps), inlines}
 }
 
-async function rewriteHTML(html: string, options: RewriteOptions): Promise<any> {
+async function rewriteHTML(html: string, options: RewriteOptions) {
     const dom = parse(html) as HTMLElement
-    const {bundles, deps} = await rewriteBundles(dom, options)
+    const {bundles, deps, inlines} = await rewriteBundles(dom, options)
 
     return {
         html: dom.outerHTML,
         bundles,
-        deps
+        deps,
+        inlines
     }
 }
 
@@ -69,45 +85,60 @@ interface BuildOptions {
 }
 
 const builtPackages = new Map<string, string>()
-
+let buildPending: Promise<string> | null = null
 async function buildIfNeeded(options: BuildOptions) {
-    const buildKey = JSON.stringify(options)
-    console.log(buildKey)
-    const built = builtPackages.get(buildKey)
-    if (built)
-        return built
-    const dir = await fs.mkdtemp(tmpdir())
-    const distDir = path.join(dir, '.dist')
-    await fs.mkdir(distDir)
-    await fs.copy(options.rootDir, distDir)
-    const siteMapPath = path.join(distDir, 'sitemap.txt')
-    const htmlFiles = fs.existsSync(siteMapPath) ? (await fs.readFile(siteMapPath, 'utf8')).split('\n') : ['index.html']
-    const bundlePaths = new Set()
-    const depPaths = new Set()
-    for (const htmlPath of htmlFiles) {
-        const basePath = path.join(distDir, htmlPath)
-        const {html, bundles, deps} = await rewriteHTML(await fs.readFile(basePath, 'utf8'), {browser: options.browser, basePath})
-        for (const b of bundles)
-            bundlePaths.add(b)
-        for (const d of deps)
-            depPaths.add(d)
-        await fs.writeFile(basePath, html)
+    if (buildPending) {
+        await buildPending
+        buildPending = null
     }
 
-    await fs.copy(path.join(__dirname, 'template-dir'), dir)
-    const buildScript = `
-        nvm use
-        nvm i
-        npm i
-        npm install ${Array.from(depPaths).join(' ')}
-        ${Array.from(bundlePaths).map(p => `
-            ./node_modules/.bin/esbuild --bundle --outfile=${dir}/${p}.bundle.js --sourcemap --platform=browser --target=${options.browser} --minify ${dir}/${p}
-        `)}
-    `
-    await fs.writeFile(path.join(dir, 'build.sh'), buildScript)
-    await new Promise(resolve => exec('./build.sh', {cwd: dir}, () => resolve({})))
-    builtPackages.set(options.rootDir, dir)
-    return dir
+    const buildKey = JSON.stringify(options)
+    const built = builtPackages.get(buildKey) as string
+    if (built)
+        return built
+    buildPending = new Promise<string>(async r => {
+        console.log(buildKey)
+        const dir = await fs.mkdtemp(tmpdir())
+        const distDir = path.join(dir, '.dist')
+        await fs.mkdir(distDir)
+        await fs.copy(options.rootDir, distDir)
+        const siteMapPath = path.join(distDir, 'sitemap.txt')
+        const htmlFiles = fs.existsSync(siteMapPath) ? (await fs.readFile(siteMapPath, 'utf8')).split('\n') : ['index.html']
+        const bundlePaths = new Set()
+        const depPaths = new Set()
+        for (const htmlPath of htmlFiles) {
+            const basePath = path.join(distDir, htmlPath)
+            const {html, bundles, deps, inlines} = await rewriteHTML(await fs.readFile(basePath, 'utf8'), {browser: options.browser, basePath})
+            await Promise.all(Array.from(inlines.entries()).map(([name, code]) => {
+                return fs.writeFile(path.join(distDir, name), code)
+            }))
+
+            for (const b of Array.from(bundles))
+                bundlePaths.add(b)
+            for (const d of deps)
+                depPaths.add(d)
+            await fs.writeFile(basePath, html)
+        }
+
+        await fs.copy(path.join(__dirname, 'template-dir'), dir)
+        const buildScript = `
+            nvm use
+            nvm i
+            npm i
+            npm install ${Array.from(depPaths).join(' ')}
+            ${Array.from(bundlePaths).map(p => `
+                ./node_modules/.bin/esbuild --bundle --outfile=${distDir}/${p}.bundle.js --sourcemap --platform=browser --target=${options.browser} --minify ${distDir}/${p}
+            `).join('')}
+        `
+
+        console.log(buildScript)
+        await fs.writeFile(path.join(dir, 'build.sh'), buildScript)
+        await new Promise(resolve => exec('./build.sh', {cwd: dir}, () => resolve({})))
+        builtPackages.set(buildKey, dir)
+        r(dir)
+    })
+
+    return await buildPending
 }
 
 export function serve(assetDir: string) {
