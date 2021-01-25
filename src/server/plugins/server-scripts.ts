@@ -2,6 +2,7 @@ import {JSDOM} from 'jsdom'
 import path from 'path'
 import {readFile} from 'fs-extra'
 import {runInNewContext} from 'vm'
+import {launch} from 'puppeteer'
 
 export default async function executeServerScripts({window}: JSDOM, basePath: string) {
     const serverScripts = Array.from(window.document.querySelectorAll('script[side]'))
