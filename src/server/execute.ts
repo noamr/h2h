@@ -12,12 +12,11 @@ function removeDevScript(document: HTMLDocument) {
 export async function executeHTML(html: string, basePath: string) {
     // TODO: this can be cached from rewriteHTML
     const jsdom = new JSDOM(html)
+    removeDevScript(jsdom.window.document)
     await executeMarkdown(jsdom)
     await executeInclude(jsdom, basePath)
-    await executeServerScripts(jsdom, basePath)
-    removeDevScript(jsdom.window.document)
+    html = await executeServerScripts(jsdom, basePath)
 
-    html = jsdom.window.document.documentElement.outerHTML
     return {
         html
     }
