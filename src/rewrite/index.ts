@@ -79,9 +79,13 @@ async function rewriteHTML(html: string, options: RewriteOptions) {
 }
 
 async function executeServerScripts({window}: JSDOM, options: RewriteOptions) {
-    const serverScripts = Array.from(window.document.querySelectorAll('script[side~="server"]'))
+    const serverScripts = Array.from(window.document.querySelectorAll('script[side]'))
     const urlToPath = (url: string) => path.join(options.basePath, url)
     for (const serverScript of serverScripts) {
+        const side = serverScript.getAttribute('side') || 'client'
+        if (!side.includes('server'))
+            continue
+
         const scriptPath = urlToPath(serverScript.getAttribute('src') as string)
         if (serverScript.getAttribute('side') === 'server')
             serverScript.remove()
