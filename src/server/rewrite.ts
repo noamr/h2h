@@ -8,7 +8,7 @@ import path from 'path'
 import express from 'express'
 import {JSDOM} from 'jsdom'
 import * as uuid from 'uuid'
-
+import chokidar from 'chokidar'
 interface BuildOptions {
     browser: string
     rootDir: string
@@ -27,7 +27,7 @@ async function rewriteBundles(document: Document, options: BuildOptions) {
     ]
 
     const importMap = importMaps.reduce((a, o) => Object.assign(a, o), {})
-    const bundleScriptTags = Array.from(document.querySelectorAll('bundle-script'))
+    const bundleScriptTags = Array.from(document.querySelectorAll('trans-script'))
     const deps = new Set<string>()
     for (const name in importMap)
         deps.add(`${name}@${importMap[name].version}`)
@@ -47,6 +47,8 @@ async function rewriteBundles(document: Document, options: BuildOptions) {
         bundles.add(src)
         const newScript = document.createElement('script') as HTMLScriptElement
         newScript.src = `${src}.bundle.js`
+        if (script.hasAttribute('server-side'))
+            newScript.setAttribute('server-side', 'server-side')
         newScript.setAttribute('side', script.getAttribute('side') || 'client')
         if (script.hasAttribute('defer'))
             newScript.setAttribute('defer', 'defer');
@@ -68,7 +70,7 @@ async function rewriteHTML(html: string, options: BuildOptions) {
     }
 }
 
-export async function buildIfNeeded(options: BuildOptions) {
+export async function buildIfNeeded(options: BuildOptions & {watch: boolean}) {
     if (buildPending) {
         await buildPending
         buildPending = null
@@ -78,14 +80,6 @@ export async function buildIfNeeded(options: BuildOptions) {
     const built = builtPackages.get(buildKey) as string
     if (built)
         return built
-    const watch = (p: string) => {
-        fs.watchFile(p, () => {
-            if (builtPackages.has(buildKey)) {
-                console.log(`Invalidating ${buildKey}`)
-                builtPackages.delete(buildKey)
-            }
-        })
-    }
 
     buildPending = new Promise<string>(async r => {
         const dir = await fs.mkdtemp(tmpdir())
@@ -110,8 +104,6 @@ export async function buildIfNeeded(options: BuildOptions) {
             await fs.writeFile(basePath, html)
         }
 
-        bundlePaths.forEach(p => watch(path.join(distDir, p)))
-
         await fs.copy(path.join(__dirname, 'template-dir'), dir)
         const buildScript = `
             nvm use
@@ -126,6 +118,14 @@ export async function buildIfNeeded(options: BuildOptions) {
         await fs.writeFile(path.join(dir, 'build.sh'), buildScript)
         await new Promise(resolve => exec('./build.sh', {cwd: dir}, () => resolve({})))
         builtPackages.set(buildKey, distDir)
+        const watcher = chokidar.watch(options.rootDir, {persistent: true})
+        watcher.on('change', () => {
+            console.log(`Invalidating packages from ${options.rootDir}`)
+            builtPackages.delete(buildKey)
+            fs.rmdirSync(dir, {recursive: true})
+            watcher.close()
+        })
+
         r(distDir)
     })
 

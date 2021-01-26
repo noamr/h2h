@@ -17,7 +17,7 @@ function browserFromRequest(req: express.Request, defaultBrowser = 'chrome80') {
 
 export default function serve(assetDir: string) {
     return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-        const dir = await buildIfNeeded({rootDir: path.normalize(assetDir), browser: browserFromRequest(req)})
+        const dir = await buildIfNeeded({rootDir: path.normalize(assetDir), browser: browserFromRequest(req), watch: true})
         if ((req.headers['accept'] || '').includes('text/html')) {
             const html = await fs.readFile(path.join(dir, req.path || 'index.html'), 'utf8')
             if (html) {

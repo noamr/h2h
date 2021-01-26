@@ -4,12 +4,12 @@ import {ImportMap} from '../common/types'
 const registry = new Map<string, string>()
 let globalImportsInitialized = false
 const createUID = () => `${Number(performance.now()).toString(36)}_${Number(Math.random() * 1000000).toString(36)}}`
-async function resolveModule(code: string, url: URL) {
+async function resolveModule(code: string, href: string) {
     const pendingImports = new Set<string>()
     const transformImports = () => transform(code, {
         presets: [availablePresets.typescript],
         sourceMaps: 'inline',
-        filename: url.pathname,
+        filename: new URL(href).pathname,
         plugins: [{
             visitor: {
                 ImportDeclaration: (path, state) => {
@@ -22,7 +22,7 @@ async function resolveModule(code: string, url: URL) {
                         return
                     }
 
-                    const value = new URL(node.source.value, url).href
+                    const value = new URL(node.source.value, href).href
 
                     if (registry.has(value))
                         node.source.value = registry.get(value)
@@ -42,14 +42,14 @@ async function resolveModule(code: string, url: URL) {
     return transformImports()
 }
 
-async function resolveCode(code: string, url: URL) {
-    const result = await resolveModule(code, url)
+async function resolveCode(code: string, href: string) {
+    const result = await resolveModule(code, href)
     if (!result || !result.code)
         throw new Error(`Unable to import ${name}`)
 
     const blob = new Blob([result.code], {type: 'text/javascript'})
     const blobURL = URL.createObjectURL(blob)
-    registry.set(url.href, blobURL)
+    registry.set(href, blobURL)
     return blobURL
 }
 
@@ -64,7 +64,7 @@ export async function resolve(name: string, baseURL: string): Promise<string> {
     if (response.status !== 200)
         throw new Error(`Module not found: ${name}`)
     const text = await response.text()
-    return resolveCode(text, url)
+    return resolveCode(text, url.href)
 }
 
 class BundleLoadEvent extends Event {
@@ -134,7 +134,7 @@ class BundleScript extends HTMLElement {
         })
     }
 
-    get observedAttributes() { return ['src'] }
+    get observedAttributes() { return ['src', 'onerror'] }
     attributesChangedCallback() {
         this.render()
     }
@@ -159,20 +159,13 @@ class BundleScript extends HTMLElement {
         
         const dispatch = async () => {
             const blobURL = inner ?
-                await resolveCode(inner, new URL(location.href)) :
+                await resolveCode(inner, location.href) :
                 await resolve(src as string, location.href)
 
             const uid = createUID()
             const script = document.createElement('script')
-            window[uid] = (module: any) => {
-                this.dispatchEvent(new BundleLoadEvent(module))
-                delete window[uid]
-                script.remove()
-            }
             script.type = 'module'
-            const textNode = document.createTextNode(`
-                import('${blobURL}').then(window['${uid}'])
-            `)
+            const textNode = document.createTextNode(`import('${blobURL}')`)
             script.appendChild(textNode)
             this.shadow.appendChild(script)
         }
@@ -184,4 +177,4 @@ class BundleScript extends HTMLElement {
     }
 }
 
-customElements.define('bundle-script', BundleScript)
+customElements.define('trans-script', BundleScript)

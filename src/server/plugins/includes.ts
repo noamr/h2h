@@ -3,7 +3,7 @@ import path from 'path'
 import fs from 'fs-extra'
 
 export default async function executeInclude({window}: JSDOM, basePath: string) {
-    const includes = window.document.querySelectorAll('html-include')
+    const includes = window.document.querySelectorAll('trans-inc')
     let needsClientSide = false
     for (const inc of Array.from(includes)) {
         const src = inc.getAttribute('src') as string

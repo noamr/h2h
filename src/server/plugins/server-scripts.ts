@@ -8,7 +8,7 @@ import getPort from 'get-port'
 import {v4} from 'uuid'
 
 export default async function executeServerScripts({window}: JSDOM, basePath: string): Promise<string> {
-    const scriptAttributes = ['src', 'defer', 'async', 'side']
+    const scriptAttributes = ['src', 'defer', 'async', 'server-side']
     const serverScripts = Array.from(window.document.querySelectorAll('script'))
     for (const script of serverScripts) {
         const newScript = window.document.createElement('maybe-script')
@@ -44,7 +44,7 @@ export default async function executeServerScripts({window}: JSDOM, basePath: st
             }
 
             async render() {
-                if (this.getAttribute('side') === 'client')
+                if (this.getAttribute('server-side') !== 'server-side')
                     return
 
                 if (this.rendered)
@@ -66,10 +66,7 @@ export default async function executeServerScripts({window}: JSDOM, basePath: st
                 newScript.src = this.getAttribute('src') || ''
                 newScript.defer = this.hasAttribute('defer')
                 newScript.async = true
-                if (this.getAttribute('side') === 'server')
-                    this.shadow.appendChild(newScript)
-                else
-                    this.replaceWith(newScript)
+                this.shadow.appendChild(newScript)
             }
             
             connectedCallback() {
@@ -83,8 +80,8 @@ export default async function executeServerScripts({window}: JSDOM, basePath: st
     await page.evaluate(() => {
         const scripts = window.document.querySelectorAll('maybe-script')
         for (const script of Array.from(scripts)) {
-            const side = script.getAttribute('side')
-            if (side === 'server') {
+            const side = script.getAttribute('server-side')
+            if (side === 'server-side') {
                 script.remove()
                 continue
             }

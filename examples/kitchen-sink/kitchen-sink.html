@@ -1,40 +1,32 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <script src="../../dist/index.js" side="dev"></script>
+        <script src="../../dist/index.js" dev-only></script>
         <link rel="package" name="lodash" href="https://unpkg.com/lodash@4.17.20/lodash.min.js" global="_" version="4.17.20" />
-        <bundle-script defer>
+        <trans-script defer>
             import {hello} from './hello-world.ts'
             document.querySelector('#bundle-output').innerText = hello()
-        </bundle-script>
-        <bundle-script defer>
+        </trans-script>
+        <trans-script defer>
             import {helloLodash} from './hello-lodash.ts'
             document.querySelector('#ld-output').innerText = helloLodash()
-        </bundle-script>
-        <script>
-        </script>
-        <bundle-script src="hello-server.ts" side="server">
-        </bundle-script>
-        <bundle-script src="hello-iso.ts" side="client server" defer>
-        </bundle-script>
+        </trans-script>
+        <trans-script src="hello-server.ts" server-side>
+        </trans-script>
     </head>
     <body>
         <h2>Bundle</h2>
         <output id="bundle-output"></output>
-        <h2>Zero MD</h2>
-        <zero-md>
-            <script type="text/markdown">
+        <h2>Markdown</h2>
+        <trans-md>
 ### Header 3
 Hello from *MarkDown*
-            </script>
-        </zero-md>
+        </trans-md>
         <h2>HTML Include</h2>
-        <html-include src="include.html"></html-include>
+        <trans-inc src="include.html"></trans-inc>
         <h2>Importable</h2>
         <output id="ld-output"></output>
         <h2>Server</h2>
         <output id="server-output"></output>
-        <h2>Isomporphic</h2>
-        <output id="iso-output"></output>
     </body>
 </html>

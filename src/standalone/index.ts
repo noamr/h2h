@@ -1,3 +1,3 @@
-import 'zero-md'
-import 'html-include-element'
+import './trans-md'
+import './trans-include.ts'
 import './bundler'
