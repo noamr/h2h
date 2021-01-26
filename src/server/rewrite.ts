@@ -70,7 +70,7 @@ async function rewriteHTML(html: string, options: BuildOptions) {
     }
 }
 
-export async function buildIfNeeded(options: BuildOptions & {watch: boolean}) {
+export async function buildIfNeeded(options: BuildOptions & {watch: boolean, repoRoot: string}) {
     if (buildPending) {
         await buildPending
         buildPending = null
@@ -82,7 +82,7 @@ export async function buildIfNeeded(options: BuildOptions & {watch: boolean}) {
         return built
 
     buildPending = new Promise<string>(async r => {
-        const dir = await fs.mkdtemp(tmpdir())
+        const dir = await fs.mkdtemp(options.repoRoot)
         const distDir = path.join(dir, '.dist')
         await fs.mkdir(distDir)
         await fs.copy(options.rootDir, distDir)
